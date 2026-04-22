@@ -1,0 +1,2171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>FLUXA Chart</title>
+  <!--
+    FLUXA TradingView-style Chart
+    Uses: TradingView Lightweight Charts v4 (MIT License)
+    Data: Bybit WebSocket (free, no API key)
+    NOTE: Requires internet connection to load CDN script and WebSocket data.
+          For offline use, download the script and serve it locally.
+    CDN: https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js
+  -->
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* ── Toolbar ────────────────────────────────────────────────── */
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    #brand {
+      font-weight: 700;
+      font-size: 15px;
+      color: #00bcd4;
+      letter-spacing: 1px;
+      margin-right: 4px;
+    }
+
+    .divider {
+      width: 1px;
+      height: 20px;
+      background: #30363d;
+      margin: 0 4px;
+    }
+
+    /* Pair buttons */
+    .pair-btn, .tf-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      border-radius: 5px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.15s;
+      outline: none;
+    }
+    .pair-btn:hover, .tf-btn:hover {
+      background: #2d333b;
+      color: #e6edf3;
+      border-color: #484f58;
+    }
+    .pair-btn.active, .tf-btn.active {
+      background: #00bcd4;
+      color: #0d1117;
+      border-color: #00bcd4;
+    }
+
+    .draw-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      border-radius: 5px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      transition: all 0.15s;
+      outline: none;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .draw-btn:hover {
+      background: #2d333b;
+      color: #e6edf3;
+    }
+    .draw-btn.active {
+      background: #1f3a3d;
+      color: #00bcd4;
+      border-color: #00bcd4;
+    }
+
+    /* Toolbar sections */
+    .toolbar-section {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .section-label {
+      font-size: 9px;
+      color: #484f58;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-weight: 700;
+      white-space: nowrap;
+      margin-right: 2px;
+    }
+
+    /* Indicator toggle buttons */
+    .ind-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      border-radius: 5px;
+      padding: 3px 8px;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 700;
+      transition: all 0.15s;
+      outline: none;
+      letter-spacing: 0.3px;
+    }
+    .ind-btn:hover { background: #2d333b; color: #e6edf3; }
+    .ind-btn.active.ema20 { background: #2d2a1a; color: #f0b429; border-color: #f0b429; }
+    .ind-btn.active.ema50 { background: #1a1d35; color: #7c8cf8; border-color: #7c8cf8; }
+    .ind-btn.active.bb    { background: #1a2d2a; color: #26a69a; border-color: #26a69a; }
+    .ind-btn.active.rsi   { background: #2a1a2d; color: #e040fb; border-color: #e040fb; }
+
+    /* Drawing tools */
+    #draw-tools {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* RSI pane */
+    #rsi-container {
+      height: 0;
+      overflow: hidden;
+      flex-shrink: 0;
+      border-top: 1px solid #21262d;
+      position: relative;
+      transition: height 0.2s ease;
+    }
+    #rsi-container.visible { height: 110px; }
+    #rsi-chart { width: 100%; height: 100%; }
+    #rsi-label {
+      position: absolute;
+      top: 4px;
+      left: 8px;
+      font-size: 10px;
+      color: #e040fb;
+      font-weight: 700;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    /* ── Additional indicator panes ─────────────────────────────── */
+    #macd-container, #stoch-container {
+      height: 0;
+      overflow: hidden;
+      flex-shrink: 0;
+      border-top: 1px solid #21262d;
+      position: relative;
+      transition: height 0.2s ease;
+    }
+    #macd-container.visible, #stoch-container.visible { height: 110px; }
+    #macd-chart, #stoch-chart { width: 100%; height: 100%; }
+    .pane-label {
+      position: absolute;
+      top: 4px;
+      left: 8px;
+      font-size: 10px;
+      font-weight: 700;
+      z-index: 5;
+      pointer-events: none;
+    }
+    #macd-label  { color: #00bcd4; }
+    #stoch-label { color: #00bcd4; }
+
+    /* ── Status bar ─────────────────────────────────────────────── */
+    #statusbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 4px 12px;
+      background: #0d1117;
+      border-bottom: 1px solid #161b22;
+      flex-shrink: 0;
+      font-size: 12px;
+    }
+
+    #symbol-label {
+      font-weight: 700;
+      font-size: 14px;
+      color: #e6edf3;
+    }
+
+    #price-display {
+      font-size: 18px;
+      font-weight: 700;
+      color: #26a69a;
+    }
+
+    #ohlc-display {
+      color: #8b949e;
+      font-size: 11px;
+    }
+
+    #change-display {
+      font-size: 13px;
+      font-weight: 700;
+    }
+    #change-display.up   { color: #26a69a; }
+    #change-display.down { color: #ef5350; }
+
+    #stats-24h {
+      color: #8b949e;
+      font-size: 11px;
+    }
+
+    #ws-status {
+      margin-left: auto;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    #ws-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #484f58;
+      transition: background 0.3s;
+    }
+    #ws-dot.connected { background: #3fb950; }
+    #ws-dot.error { background: #f85149; }
+    #ws-dot.simulated { background: #f0b429; }
+
+    /* ── Chart container ────────────────────────────────────────── */
+    #chart-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #chart {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Drawing overlay canvas */
+    #draw-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #draw-canvas.active {
+      pointer-events: all;
+      cursor: none;
+    }
+    #cursor-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 11;
+    }
+
+    /* Tooltip for drawing */
+    #draw-tooltip {
+      position: absolute;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+      color: #8b949e;
+      pointer-events: none;
+      display: none;
+      z-index: 20;
+    }
+
+    /* ── UI Tooltip ─────────────────────────────────────────────────── */
+    #ui-tip {
+      position: fixed;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      padding: 5px 10px;
+      font-size: 11px;
+      color: #e6edf3;
+      pointer-events: none;
+      display: none;
+      z-index: 9999;
+      max-width: 220px;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0,0,0,.5);
+    }
+
+    /* ── Color picker ───────────────────────────────────────────────── */
+    .color-picker {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+    .color-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      padding: 0;
+      outline: none;
+      transition: border-color 0.15s, transform 0.1s;
+      flex-shrink: 0;
+    }
+    .color-dot:hover  { transform: scale(1.2); }
+    .color-dot.active { border-color: #e6edf3; }
+
+    /* ── Draw hint bar ──────────────────────────────────────────────── */
+    #draw-hint {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #161b22dd;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 5px 14px;
+      font-size: 11px;
+      color: #8b949e;
+      pointer-events: none;
+      z-index: 25;
+      display: none;
+      white-space: nowrap;
+    }
+
+    /* Loading overlay */
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0d1117;
+      z-index: 100;
+      gap: 12px;
+    }
+    #loading.hidden { display: none; }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #21262d;
+      border-top-color: #00bcd4;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #loading-text {
+      color: #8b949e;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── TOOLBAR ──────────────────────────────────────────────────── -->
+  <div id="toolbar">
+    <span id="brand">FLUXA</span>
+    <div class="divider"></div>
+
+    <!-- Pairs -->
+    <div class="toolbar-section">
+      <span class="section-label">Pair</span>
+      <button class="pair-btn active" data-pair="BTCUSDT" onclick="setPair('BTCUSDT')" data-tip="Bitcoin / USDT">BTC</button>
+      <button class="pair-btn" data-pair="ETHUSDT" onclick="setPair('ETHUSDT')" data-tip="Ethereum / USDT">ETH</button>
+      <button class="pair-btn" data-pair="SOLUSDT" onclick="setPair('SOLUSDT')" data-tip="Solana / USDT">SOL</button>
+      <button class="pair-btn" data-pair="BNBUSDT" onclick="setPair('BNBUSDT')" data-tip="BNB / USDT">BNB</button>
+      <button class="pair-btn" data-pair="XRPUSDT" onclick="setPair('XRPUSDT')" data-tip="XRP / USDT">XRP</button>
+      <button class="pair-btn" data-pair="DOGEUSDT" onclick="setPair('DOGEUSDT')" data-tip="Dogecoin / USDT">DOGE</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Timeframes -->
+    <div class="toolbar-section">
+      <span class="section-label">TF</span>
+      <button class="tf-btn active" data-tf="1m" onclick="setTimeframe('1m')" data-tip="1 Minute candles">1m</button>
+      <button class="tf-btn" data-tf="5m" onclick="setTimeframe('5m')" data-tip="5 Minute candles">5m</button>
+      <button class="tf-btn" data-tf="15m" onclick="setTimeframe('15m')" data-tip="15 Minute candles">15m</button>
+      <button class="tf-btn" data-tf="1h" onclick="setTimeframe('1h')" data-tip="1 Hour candles">1h</button>
+      <button class="tf-btn" data-tf="4h" onclick="setTimeframe('4h')" data-tip="4 Hour candles">4h</button>
+      <button class="tf-btn" data-tf="1d" onclick="setTimeframe('1d')" data-tip="Daily candles">1D</button>
+      <button class="tf-btn" data-tf="1w" onclick="setTimeframe('1w')" data-tip="Weekly candles">1W</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Indicators -->
+    <div class="toolbar-section">
+      <span class="section-label">Ind</span>
+      <button class="ind-btn active ema20" id="btn-ema20" onclick="toggleEMA(20)"  data-tip="EMA 20 — Exponential Moving Average (20 period)">EMA 20</button>
+      <button class="ind-btn active ema50" id="btn-ema50" onclick="toggleEMA(50)"  data-tip="EMA 50 — Exponential Moving Average (50 period)">EMA 50</button>
+      <button class="ind-btn bb"           id="btn-bb"    onclick="toggleBB()"     data-tip="Bollinger Bands — 20 period, 2σ deviation">BB</button>
+      <button class="ind-btn"              id="btn-vwap"  onclick="toggleVWAP()"   data-tip="VWAP — Volume-Weighted Average Price (day traders' anchor)">VWAP</button>
+      <button class="ind-btn rsi"          id="btn-rsi"   onclick="toggleRSI()"    data-tip="RSI 14 — Relative Strength Index, overbought >70 / oversold <30">RSI</button>
+      <button class="ind-btn"              id="btn-macd"  onclick="toggleMACD()"   data-tip="MACD (12,26,9) — Moving Average Convergence Divergence" style="color:#8b949e">MACD</button>
+      <button class="ind-btn"              id="btn-stoch" onclick="toggleStoch()"  data-tip="Stochastic (14,3) — %K and %D overbought/oversold oscillator" style="color:#8b949e">Stoch</button>
+      <button class="ind-btn"              id="btn-pdhl"  onclick="togglePDHL()"   data-tip="Prev Day High/Low — key reference levels for day traders" style="color:#8b949e">PDH/L</button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Drawing tools -->
+    <div id="draw-tools">
+      <span class="section-label">Draw</span>
+      <button class="draw-btn" id="btn-trend"    onclick="setTool('trend')"    data-tip="Trend Line — click two points to draw (T)">&#9135; Trend</button>
+      <button class="draw-btn" id="btn-hline"    onclick="setTool('hline')"    data-tip="Horizontal Line — click anywhere to place (H)">&#9135;&#9135; H-Line</button>
+      <button class="draw-btn" id="btn-fib"      onclick="setTool('fib')"      data-tip="Fibonacci Retracement — click high then low (Z)">&#8767; Fib</button>
+      <button class="draw-btn" id="btn-rect"     onclick="setTool('rect')"     data-tip="Rectangle — draw supply/demand zones (R)">&#9645; Rect</button>
+      <button class="draw-btn" id="btn-freehand" onclick="setTool('freehand')" data-tip="Freehand Pen — hold and drag to draw (F)">&#9998; Pen</button>
+      <button class="draw-btn" id="btn-position" onclick="setTool('position')" data-tip="Position Planner — set Entry, Stop Loss, Take Profit (P)" style="color:#3fb950">&#9654; Position</button>
+      <div class="divider"></div>
+      <div class="color-picker">
+        <button class="color-dot active" data-color="#00bcd4" style="background:#00bcd4" onclick="setDrawColor('#00bcd4')" data-tip="Cyan"></button>
+        <button class="color-dot"        data-color="#f0b429" style="background:#f0b429" onclick="setDrawColor('#f0b429')" data-tip="Amber"></button>
+        <button class="color-dot"        data-color="#f85149" style="background:#f85149" onclick="setDrawColor('#f85149')" data-tip="Red"></button>
+        <button class="color-dot"        data-color="#3fb950" style="background:#3fb950" onclick="setDrawColor('#3fb950')" data-tip="Green"></button>
+        <button class="color-dot"        data-color="#e040fb" style="background:#e040fb" onclick="setDrawColor('#e040fb')" data-tip="Purple"></button>
+      </div>
+      <div class="divider"></div>
+      <button class="draw-btn" id="btn-undo"  onclick="undoDrawing()"    data-tip="Undo last drawing (Ctrl+Z)">&#8630; Undo</button>
+      <button class="draw-btn" id="btn-erase" onclick="setTool('erase')" data-tip="Clear all drawings">&#10005; Clear</button>
+    </div>
+  </div>
+
+  <!-- ── STATUS BAR ───────────────────────────────────────────────── -->
+  <div id="statusbar">
+    <span id="symbol-label">BTC/USDT</span>
+    <span id="price-display">--</span>
+    <span id="change-display">--%</span>
+    <span id="stats-24h">24h H: -- L: --</span>
+    <span id="ohlc-display">O: -- H: -- L: -- C: --</span>
+    <span id="ws-status">
+      <span id="ws-dot"></span>
+      <span id="ws-label">Connecting…</span>
+    </span>
+  </div>
+
+  <!-- ── CHART AREA ───────────────────────────────────────────────── -->
+  <div id="chart-container">
+    <div id="chart"></div>
+    <canvas id="draw-canvas"></canvas>
+    <canvas id="cursor-canvas"></canvas>
+    <div id="draw-tooltip"></div>
+    <div id="ui-tip"></div>
+    <div id="draw-hint"></div>
+
+    <!-- Loading overlay shown until chart + first data arrive -->
+    <div id="loading">
+      <div class="spinner"></div>
+      <div id="loading-text">Loading chart library…</div>
+    </div>
+  </div>
+
+  <!-- RSI pane — shown when RSI toggled on -->
+  <div id="rsi-container">
+    <span id="rsi-label">RSI 14</span>
+    <div id="rsi-chart"></div>
+  </div>
+
+  <!-- MACD pane -->
+  <div id="macd-container">
+    <span class="pane-label" id="macd-label">MACD 12,26,9</span>
+    <div id="macd-chart"></div>
+  </div>
+
+  <!-- Stochastic pane -->
+  <div id="stoch-container">
+    <span class="pane-label" id="stoch-label">Stoch 14,3</span>
+    <div id="stoch-chart"></div>
+  </div>
+
+</div>
+
+<!-- ── TradingView Lightweight Charts v4 (MIT) ─────────────────────── -->
+<script src="lightweight-charts.standalone.production.js"
+        onerror="this.onerror=null; this.src='https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js';"></script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+//  FLUXA Chart — TradingView Lightweight Charts + Bybit WebSocket
+// ══════════════════════════════════════════════════════════════════════
+
+/* ── State ─────────────────────────────────────────────────────────── */
+let chart = null;
+let candleSeries = null;
+let volumeSeries = null;
+let vwapSeries = null;
+let currentPair = 'BTCUSDT';
+let currentTf   = '1m';
+let ws          = null;
+let candleMap   = {};        // time -> candle for dedup/update
+let currentTool = null;      // 'trend' | 'hline' | 'fib' | 'rect' | null
+let redrawThrottle = null;
+
+/* Drawing state */
+let drawings    = [];        // [{type, ...coords}]
+let drawStep    = 0;         // 0=idle, 1=first-point-set
+let drawStart   = null;      // {x, y, price, time}
+let _drawColor          = '#00bcd4'; // active drawing colour
+let _isDrawingFreehand  = false;     // true while mouse is held in freehand mode
+let _freehandPoints     = [];        // points being collected for current freehand stroke
+
+/* ── Price formatter — decimal places scale with price magnitude ────── */
+function formatPrice(price) {
+  if (price === null || price === undefined || isNaN(price)) return '--';
+  if (price >= 10000)  return price.toFixed(1);
+  if (price >= 1000)   return price.toFixed(2);
+  if (price >= 100)    return price.toFixed(2);
+  if (price >= 1)      return price.toFixed(4);
+  if (price >= 0.01)   return price.toFixed(5);
+  return price.toFixed(6);
+}
+
+/* ── EMA calculation ────────────────────────────────────────────────── */
+function calcEMA(candles, period) {
+  if (candles.length < period) return [];
+  const k = 2 / (period + 1);
+  const result = [];
+  let ema = candles.slice(0, period).reduce((s, c) => s + c.close, 0) / period;
+  result.push({ time: candles[period - 1].time, value: ema });
+  for (let i = period; i < candles.length; i++) {
+    ema = candles[i].close * k + ema * (1 - k);
+    result.push({ time: candles[i].time, value: ema });
+  }
+  return result;
+}
+
+function setEMAData(candles) {
+  const e20 = calcEMA(candles, 20);
+  const e50 = calcEMA(candles, 50);
+  _ema20 = e20.length ? e20[e20.length - 1].value : null;
+  _ema50 = e50.length ? e50[e50.length - 1].value : null;
+  if (ema20Series) ema20Series.setData(e20);
+  if (ema50Series) ema50Series.setData(e50);
+}
+
+function updateEMAOnTick(close, time) {
+  const k20 = 2 / 21;
+  const k50 = 2 / 51;
+  if (_ema20 !== null && ema20Series) {
+    _ema20 = close * k20 + _ema20 * (1 - k20);
+    ema20Series.update({ time, value: _ema20 });
+  }
+  if (_ema50 !== null && ema50Series) {
+    _ema50 = close * k50 + _ema50 * (1 - k50);
+    ema50Series.update({ time, value: _ema50 });
+  }
+}
+
+function toggleEMA(period) {
+  if (period === 20) {
+    _showEma20 = !_showEma20;
+    if (ema20Series) ema20Series.applyOptions({ visible: _showEma20 });
+    document.getElementById('btn-ema20').classList.toggle('active', _showEma20);
+  } else {
+    _showEma50 = !_showEma50;
+    if (ema50Series) ema50Series.applyOptions({ visible: _showEma50 });
+    document.getElementById('btn-ema50').classList.toggle('active', _showEma50);
+  }
+}
+
+/* ── VWAP ───────────────────────────────────────────────────────────── */
+function calcVWAP(candles) {
+  let cumPV = 0, cumV = 0;
+  return candles.map(c => {
+    const vol  = volumeMap[c.time] || 0;
+    const tp   = (c.high + c.low + c.close) / 3;
+    cumPV += tp * vol;
+    cumV  += vol;
+    return { time: c.time, value: cumV > 0 ? cumPV / cumV : tp };
+  });
+}
+
+function setVWAPData(candles) {
+  if (!vwapSeries) return;
+  vwapSeries.setData(calcVWAP(candles));
+}
+
+function toggleVWAP() {
+  _showVWAP = !_showVWAP;
+  if (vwapSeries) vwapSeries.applyOptions({ visible: _showVWAP });
+  document.getElementById('btn-vwap').classList.toggle('active', _showVWAP);
+}
+
+/* ── MACD ───────────────────────────────────────────────────────────── */
+function calcEMAValues(candles, period) {
+  if (candles.length < period) return [];
+  const k = 2 / (period + 1);
+  let ema = candles.slice(0, period).reduce((s, c) => s + c.close, 0) / period;
+  const out = [{ time: candles[period - 1].time, value: ema }];
+  for (let i = period; i < candles.length; i++) {
+    ema = candles[i].close * k + ema * (1 - k);
+    out.push({ time: candles[i].time, value: ema });
+  }
+  return out;
+}
+
+function calcMACD(candles, fast, slow, signal) {
+  fast = fast || 12; slow = slow || 26; signal = signal || 9;
+  const emaFast = calcEMAValues(candles, fast);
+  const emaSlow = calcEMAValues(candles, slow);
+  const offset  = slow - fast;
+  const macdLine = emaSlow.map((s, i) => ({ time: s.time, value: emaFast[i + offset].value - s.value }));
+  if (macdLine.length < signal) return { macdLine: [], signalLine: [], hist: [] };
+  const k = 2 / (signal + 1);
+  let sigEMA = macdLine.slice(0, signal).reduce((s, v) => s + v.value, 0) / signal;
+  const signalLine = [{ time: macdLine[signal - 1].time, value: sigEMA }];
+  for (let i = signal; i < macdLine.length; i++) {
+    sigEMA = macdLine[i].value * k + sigEMA * (1 - k);
+    signalLine.push({ time: macdLine[i].time, value: sigEMA });
+  }
+  const hist = signalLine.map((s, i) => {
+    const mv = macdLine[i + signal - 1].value;
+    return { time: s.time, value: mv - s.value, color: mv - s.value >= 0 ? '#26a69a99' : '#ef535099' };
+  });
+  return { macdLine, signalLine, hist };
+}
+
+function setMACDData(candles) {
+  if (!macdLineSeries) return;
+  const { macdLine, signalLine, hist } = calcMACD(candles);
+  _macdFastEMA   = candles.length >= 12 ? calcEMAValues(candles, 12).slice(-1)[0]?.value : null;
+  _macdSlowEMA   = candles.length >= 26 ? calcEMAValues(candles, 26).slice(-1)[0]?.value : null;
+  _macdSignalEMA = signalLine.length ? signalLine[signalLine.length - 1].value : null;
+  macdLineSeries.setData(macdLine);
+  macdSignalSeries.setData(signalLine);
+  macdHistSeries.setData(hist);
+}
+
+function updateMACDOnTick(close, time) {
+  if (!macdLineSeries || !_showMACD || _macdFastEMA === null) return;
+  const k12 = 2 / 13, k26 = 2 / 27, k9 = 2 / 10;
+  _macdFastEMA   = close * k12 + _macdFastEMA * (1 - k12);
+  _macdSlowEMA   = close * k26 + _macdSlowEMA * (1 - k26);
+  const macdVal  = _macdFastEMA - _macdSlowEMA;
+  _macdSignalEMA = macdVal * k9 + _macdSignalEMA * (1 - k9);
+  const histVal  = macdVal - _macdSignalEMA;
+  macdLineSeries.update({ time, value: macdVal });
+  macdSignalSeries.update({ time, value: _macdSignalEMA });
+  macdHistSeries.update({ time, value: histVal, color: histVal >= 0 ? '#26a69a99' : '#ef535099' });
+}
+
+function toggleMACD() {
+  _showMACD = !_showMACD;
+  document.getElementById('macd-container').classList.toggle('visible', _showMACD);
+  document.getElementById('btn-macd').classList.toggle('active', _showMACD);
+  setTimeout(() => resizePanes(), 250);
+}
+
+function initMACDChart() {
+  const container = document.getElementById('macd-chart');
+  macdChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth, height: container.clientHeight,
+    layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+    grid:   { vertLines: { color: '#161b22' }, horzLines: { color: '#161b22' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#30363d', labelBackgroundColor: '#161b22' }, horzLine: { color: '#30363d', labelBackgroundColor: '#161b22' } },
+    rightPriceScale: { borderColor: '#21262d', textColor: '#8b949e' },
+    timeScale: { borderColor: '#21262d', visible: false },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true },
+    handleScale:  { mouseWheel: true },
+  });
+  macdHistSeries = macdChart.addHistogramSeries({
+    color: '#26a69a99', priceFormat: { type: 'price', precision: 4, minMove: 0.0001 }, priceScaleId: 'right',
+  });
+  macdLineSeries = macdChart.addLineSeries({
+    color: '#00bcd4', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  macdSignalSeries = macdChart.addLineSeries({
+    color: '#f0b429', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  macdLineSeries.createPriceLine({ price: 0, color: '#30363d', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: false });
+  chart.timeScale().subscribeVisibleTimeRangeChange(range => { if (macdChart && range) { try { macdChart.timeScale().setVisibleRange(range); } catch(_) {} } });
+  const ro = new ResizeObserver(() => { macdChart.applyOptions({ width: container.clientWidth, height: container.clientHeight }); });
+  ro.observe(container);
+}
+
+/* ── Stochastic ─────────────────────────────────────────────────────── */
+function calcStochastic(candles, kPeriod, dPeriod) {
+  kPeriod = kPeriod || 14; dPeriod = dPeriod || 3;
+  const kValues = [];
+  for (let i = kPeriod - 1; i < candles.length; i++) {
+    const slice = candles.slice(i - kPeriod + 1, i + 1);
+    const lo    = Math.min(...slice.map(c => c.low));
+    const hi    = Math.max(...slice.map(c => c.high));
+    const k     = hi === lo ? 50 : (candles[i].close - lo) / (hi - lo) * 100;
+    kValues.push({ time: candles[i].time, value: +k.toFixed(2) });
+  }
+  const dValues = [];
+  for (let i = dPeriod - 1; i < kValues.length; i++) {
+    const avg = kValues.slice(i - dPeriod + 1, i + 1).reduce((s, v) => s + v.value, 0) / dPeriod;
+    dValues.push({ time: kValues[i].time, value: +avg.toFixed(2) });
+  }
+  _stochKBuf = kValues.slice(-dPeriod);
+  return { kValues, dValues };
+}
+
+function setStochData(candles) {
+  if (!stochKSeries) return;
+  const { kValues, dValues } = calcStochastic(candles);
+  stochKSeries.setData(kValues);
+  stochDSeries.setData(dValues);
+}
+
+function updateStochOnTick(candles200, time) {
+  if (!stochKSeries || !_showStoch) return;
+  const kPeriod = 14, dPeriod = 3;
+  const slice = candles200.slice(-kPeriod);
+  if (slice.length < kPeriod) return;
+  const lo = Math.min(...slice.map(c => c.low));
+  const hi = Math.max(...slice.map(c => c.high));
+  const k  = hi === lo ? 50 : (slice[slice.length-1].close - lo) / (hi - lo) * 100;
+  const kPt = { time, value: +k.toFixed(2) };
+  stochKSeries.update(kPt);
+  _stochKBuf.push(kPt);
+  if (_stochKBuf.length > dPeriod) _stochKBuf.shift();
+  if (_stochKBuf.length === dPeriod) {
+    const d = _stochKBuf.reduce((s, v) => s + v.value, 0) / dPeriod;
+    stochDSeries.update({ time, value: +d.toFixed(2) });
+  }
+}
+
+function toggleStoch() {
+  _showStoch = !_showStoch;
+  document.getElementById('stoch-container').classList.toggle('visible', _showStoch);
+  document.getElementById('btn-stoch').classList.toggle('active', _showStoch);
+  setTimeout(() => resizePanes(), 250);
+}
+
+function initStochChart() {
+  const container = document.getElementById('stoch-chart');
+  stochChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth, height: container.clientHeight,
+    layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+    grid:   { vertLines: { color: '#161b22' }, horzLines: { color: '#161b22' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#30363d', labelBackgroundColor: '#161b22' }, horzLine: { color: '#30363d', labelBackgroundColor: '#161b22' } },
+    rightPriceScale: { borderColor: '#21262d', textColor: '#8b949e', scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale: { borderColor: '#21262d', visible: false },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true },
+    handleScale:  { mouseWheel: true },
+  });
+  stochKSeries = stochChart.addLineSeries({ color: '#00bcd4', lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: true });
+  stochDSeries = stochChart.addLineSeries({ color: '#f0b429', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  stochKSeries.createPriceLine({ price: 80, color: '#f85149aa', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'OB' });
+  stochKSeries.createPriceLine({ price: 20, color: '#3fb950aa', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'OS' });
+  stochKSeries.createPriceLine({ price: 50, color: '#48505888', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false });
+  chart.timeScale().subscribeVisibleTimeRangeChange(range => { if (stochChart && range) { try { stochChart.timeScale().setVisibleRange(range); } catch(_) {} } });
+  const ro = new ResizeObserver(() => { stochChart.applyOptions({ width: container.clientWidth, height: container.clientHeight }); });
+  ro.observe(container);
+}
+
+/* ── Prev Day High / Low ────────────────────────────────────────────── */
+async function fetchPrevDayHL(pair) {
+  try {
+    if (_pdHiLine) { candleSeries.removePriceLine(_pdHiLine); _pdHiLine = null; }
+    if (_pdLoLine) { candleSeries.removePriceLine(_pdLoLine); _pdLoLine = null; }
+    if (!_showPDHL) return;
+    const url  = `https://api.bybit.com/v5/market/kline?category=spot&symbol=${pair}&interval=D&limit=2`;
+    const resp = await fetch(url);
+    const json = await resp.json();
+    const prev = json?.result?.list?.[1];
+    if (!prev) return;
+    const hi = parseFloat(prev[2]);
+    const lo = parseFloat(prev[3]);
+    _pdHiLine = candleSeries.createPriceLine({ price: hi, color: '#3fb950', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'PDH' });
+    _pdLoLine = candleSeries.createPriceLine({ price: lo, color: '#f85149', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'PDL' });
+  } catch(e) { /* non-critical */ }
+}
+
+function togglePDHL() {
+  _showPDHL = !_showPDHL;
+  document.getElementById('btn-pdhl').classList.toggle('active', _showPDHL);
+  fetchPrevDayHL(currentPair);
+}
+
+/* ── Pane resize helper ─────────────────────────────────────────────── */
+function resizePanes() {
+  const cc = document.getElementById('chart-container');
+  if (chart)      chart.applyOptions({ width: cc.clientWidth, height: cc.clientHeight });
+  if (rsiChart)   { const c = document.getElementById('rsi-chart');  rsiChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); }
+  if (macdChart)  { const c = document.getElementById('macd-chart'); macdChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); }
+  if (stochChart) { const c = document.getElementById('stoch-chart'); stochChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); }
+  resizeDrawCanvas();
+}
+
+/* ── Bollinger Bands ────────────────────────────────────────────────── */
+function calcBollingerBands(candles, period, mult) {
+  period = period || 20; mult = mult || 2;
+  const upper = [], mid = [], lower = [];
+  for (let i = period - 1; i < candles.length; i++) {
+    const slice = candles.slice(i - period + 1, i + 1);
+    const mean  = slice.reduce((s, c) => s + c.close, 0) / period;
+    const std   = Math.sqrt(slice.reduce((s, c) => s + Math.pow(c.close - mean, 2), 0) / period);
+    upper.push({ time: candles[i].time, value: mean + mult * std });
+    mid.push(  { time: candles[i].time, value: mean });
+    lower.push({ time: candles[i].time, value: mean - mult * std });
+  }
+  return { upper, mid, lower };
+}
+
+function setBBData(candles) {
+  if (!bbUpperSeries) return;
+  const { upper, mid, lower } = calcBollingerBands(candles);
+  bbUpperSeries.setData(upper);
+  bbMiddleSeries.setData(mid);
+  bbLowerSeries.setData(lower);
+}
+
+function updateBBOnTick(time) {
+  if (!bbUpperSeries || !_showBB) return;
+  const times = Object.keys(candleMap).map(Number).sort((a, b) => a - b).slice(-20);
+  if (times.length < 20) return;
+  const slice = times.map(t => candleMap[t]);
+  const mean  = slice.reduce((s, c) => s + c.close, 0) / 20;
+  const std   = Math.sqrt(slice.reduce((s, c) => s + Math.pow(c.close - mean, 2), 0) / 20);
+  bbUpperSeries.update({ time, value: mean + 2 * std });
+  bbMiddleSeries.update({ time, value: mean });
+  bbLowerSeries.update({ time, value: mean - 2 * std });
+}
+
+function toggleBB() {
+  _showBB = !_showBB;
+  if (bbUpperSeries)  bbUpperSeries.applyOptions({ visible: _showBB });
+  if (bbMiddleSeries) bbMiddleSeries.applyOptions({ visible: _showBB });
+  if (bbLowerSeries)  bbLowerSeries.applyOptions({ visible: _showBB });
+  document.getElementById('btn-bb').classList.toggle('active', _showBB);
+}
+
+/* ── RSI ────────────────────────────────────────────────────────────── */
+function calcRSI(candles, period) {
+  period = period || 14;
+  if (candles.length < period + 1) return [];
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = candles[i].close - candles[i - 1].close;
+    if (d > 0) gains += d; else losses -= d;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  const result = [];
+  const pushRSI = (time, ag, al) => result.push({ time, value: +(al === 0 ? 100 : 100 - 100 / (1 + ag / al)).toFixed(2) });
+  pushRSI(candles[period].time, avgGain, avgLoss);
+  for (let i = period + 1; i < candles.length; i++) {
+    const d = candles[i].close - candles[i - 1].close;
+    avgGain = (avgGain * (period - 1) + (d > 0 ? d : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (d < 0 ? -d : 0)) / period;
+    pushRSI(candles[i].time, avgGain, avgLoss);
+  }
+  _rsiAvgGain   = avgGain;
+  _rsiAvgLoss   = avgLoss;
+  _rsiLastClose = candles[candles.length - 1].close;
+  return result;
+}
+
+function setRSIData(candles) {
+  if (!rsiSeries) return;
+  rsiSeries.setData(calcRSI(candles));
+}
+
+function updateRSIOnTick(close, time) {
+  if (!rsiSeries || !_showRSI || _rsiAvgGain === null) return;
+  const PERIOD = 14;
+  const d = close - _rsiLastClose;
+  _rsiAvgGain   = (_rsiAvgGain * (PERIOD - 1) + (d > 0 ? d : 0)) / PERIOD;
+  _rsiAvgLoss   = (_rsiAvgLoss * (PERIOD - 1) + (d < 0 ? -d : 0)) / PERIOD;
+  _rsiLastClose = close;
+  const rsi = _rsiAvgLoss === 0 ? 100 : 100 - 100 / (1 + _rsiAvgGain / _rsiAvgLoss);
+  rsiSeries.update({ time, value: +rsi.toFixed(2) });
+}
+
+function toggleRSI() {
+  _showRSI = !_showRSI;
+  document.getElementById('rsi-container').classList.toggle('visible', _showRSI);
+  document.getElementById('btn-rsi').classList.toggle('active', _showRSI);
+  setTimeout(() => resizePanes(), 250);
+}
+
+function initRSIChart() {
+  const container = document.getElementById('rsi-chart');
+  rsiChart = LightweightCharts.createChart(container, {
+    width:  container.clientWidth,
+    height: container.clientHeight,
+    layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+    grid:   { vertLines: { color: '#161b22' }, horzLines: { color: '#161b22' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal, vertLine: { color: '#30363d', labelBackgroundColor: '#161b22' }, horzLine: { color: '#30363d', labelBackgroundColor: '#161b22' } },
+    rightPriceScale: { borderColor: '#21262d', textColor: '#8b949e', scaleMargins: { top: 0.1, bottom: 0.1 } },
+    timeScale: { borderColor: '#21262d', visible: false },
+    handleScroll: { mouseWheel: true, pressedMouseMove: true },
+    handleScale:  { mouseWheel: true },
+  });
+
+  rsiSeries = rsiChart.addLineSeries({
+    color: '#e040fb', lineWidth: 1.5,
+    priceLineVisible: false, lastValueVisible: true,
+    crosshairMarkerVisible: true,
+  });
+
+  rsiSeries.createPriceLine({ price: 70, color: '#f85149aa', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'OB' });
+  rsiSeries.createPriceLine({ price: 30, color: '#3fb950aa', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: 'OS' });
+  rsiSeries.createPriceLine({ price: 50, color: '#48505888', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: false });
+
+  // Sync time scale with main chart
+  chart.timeScale().subscribeVisibleTimeRangeChange(range => {
+    if (rsiChart && range) {
+      try { rsiChart.timeScale().setVisibleRange(range); } catch(_) {}
+    }
+  });
+
+  const ro = new ResizeObserver(() => {
+    rsiChart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+  });
+  ro.observe(container);
+}
+
+/* ── WS keep-alive ping ─────────────────────────────────────────────── */
+function startWSPing() {
+  stopWSPing();
+  _wsPingTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: 'ping' }));
+  }, 20000);
+}
+function stopWSPing() {
+  if (_wsPingTimer) { clearInterval(_wsPingTimer); _wsPingTimer = null; }
+}
+
+/* ── Timeframe maps (single source of truth) ────────────────────────── */
+const TF_MAP    = { '1m':'1', '5m':'5', '15m':'15', '1h':'60', '4h':'240', '1d':'D', '1w':'W' };
+const TF_SEC    = { '1m':60, '5m':300, '15m':900, '1h':3600, '4h':14400, '1d':86400, '1w':604800 };
+const RESOLUTION_TO_TF = Object.fromEntries(Object.entries(TF_MAP).map(([k, v]) => [v, k]));
+
+/* ── Label map ─────────────────────────────────────────────────────── */
+const PAIR_LABELS = {
+  BTCUSDT: 'BTC/USDT', ETHUSDT: 'ETH/USDT', SOLUSDT: 'SOL/USDT',
+  BNBUSDT: 'BNB/USDT', XRPUSDT: 'XRP/USDT', DOGEUSDT: 'DOGE/USDT'
+};
+
+/* ── Simulated-data fallback ────────────────────────────────────────── */
+const BASE_PRICES = {
+  BTCUSDT:65000, ETHUSDT:3200, SOLUSDT:145,
+  BNBUSDT:580,   XRPUSDT:0.52, DOGEUSDT:0.12
+};
+
+let _simTimer  = null;   // setInterval handle for simulated live ticks
+let _prevClose = null;   // previous candle close for price change colouring
+let _fetchController = null;  // AbortController for in-flight history fetch
+
+/* EMA state */
+let ema20Series = null;
+let ema50Series = null;
+let _ema20      = null;  // last computed EMA20 value for incremental updates
+let _ema50      = null;  // last computed EMA50 value for incremental updates
+let _showEma20  = true;
+let _showEma50  = true;
+
+/* VWAP */
+let _showVWAP = false;
+/* MACD */
+let macdChart = null;
+let macdLineSeries = null;
+let macdSignalSeries = null;
+let macdHistSeries = null;
+let _showMACD = false;
+let _macdFastEMA = null;
+let _macdSlowEMA = null;
+let _macdSignalEMA = null;
+/* Stochastic */
+let stochChart = null;
+let stochKSeries = null;
+let stochDSeries = null;
+let _showStoch = false;
+let _stochKBuf = [];
+/* Prev Day Hi/Lo */
+let _pdHiLine = null;
+let _pdLoLine = null;
+let _showPDHL = false;
+/* Volume map for VWAP */
+let volumeMap = {};
+/* Fibonacci drawing state */
+let _fibStep  = 0;
+let _fibStart = null;
+/* Rectangle drawing state */
+let _rectStep  = 0;
+let _rectStart = null;
+
+let _posStep  = 0;   // 0=idle, 1=entry set, 2=SL set
+let _posEntry = null; // { price }
+let _posSL    = null; // { price }
+
+/* Bollinger Bands state */
+let bbUpperSeries  = null;
+let bbMiddleSeries = null;
+let bbLowerSeries  = null;
+let _showBB = false;
+
+/* RSI state */
+let rsiChart      = null;
+let rsiSeries     = null;
+let _showRSI      = false;
+let _rsiAvgGain   = null;
+let _rsiAvgLoss   = null;
+let _rsiLastClose = null;
+
+/* WS keep-alive */
+let _wsPingTimer = null;
+
+function genCandles(pair, tf) {
+  const base    = BASE_PRICES[pair] || 100;
+  const tfSec   = TF_SEC[tf] || 60;
+  const count   = 200;
+  const arr     = [];
+  let t = Math.floor(Date.now() / 1000) - count * tfSec;
+  let p = base;
+  for (let i = 0; i < count; i++) {
+    const o = p;
+    const c = +(o + (Math.random() - 0.48) * o * 0.014).toFixed(base >= 1 ? 2 : 6);
+    const h = +(Math.max(o, c) * (1 + Math.random() * 0.008)).toFixed(base >= 1 ? 2 : 6);
+    const l = +(Math.min(o, c) * (1 - Math.random() * 0.008)).toFixed(base >= 1 ? 2 : 6);
+    const v = +(Math.random() * 500 + 50).toFixed(2);
+    arr.push({ time:t, open:o, high:h, low:l, close:c, _vol:v });
+    p = c; t += tfSec;
+  }
+  return arr;
+}
+
+function startSimLive(pair, tf) {
+  stopSimLive();
+  const tfSec = TF_SEC[tf] || 60;
+  _simTimer = setInterval(() => {
+    const times = Object.keys(candleMap).map(Number).sort((a,b)=>a-b);
+    if (!times.length) return;
+    const lastTime  = times[times.length - 1];
+    const lastClose = candleMap[lastTime].close;
+    const now       = Math.floor(Date.now() / 1000);
+    const base      = BASE_PRICES[pair] || lastClose;
+
+    if (now - lastTime >= tfSec) {
+      // new candle
+      const o = lastClose;
+      const c = +(o + (Math.random()-0.48)*o*0.006).toFixed(base>=1?2:6);
+      const h = +(Math.max(o,c)*(1+Math.random()*0.003)).toFixed(base>=1?2:6);
+      const l = +(Math.min(o,c)*(1-Math.random()*0.003)).toFixed(base>=1?2:6);
+      const candle = { time:now, open:o, high:h, low:l, close:c };
+      candleSeries.update(candle);
+      volumeSeries.update({ time:now, value:+(Math.random()*300+30).toFixed(2), color: c>=o?'#26a69a44':'#ef535044' });
+      candleMap[now] = candle;
+      volumeMap[now] = +(Math.random()*300+30).toFixed(2);
+    } else {
+      // update current candle
+      const d = (Math.random()-0.5)*lastClose*0.003;
+      const updated = { ...candleMap[lastTime] };
+      updated.close = +(updated.close + d).toFixed(base>=1?2:6);
+      updated.high  = +Math.max(updated.high,  updated.close).toFixed(base>=1?2:6);
+      updated.low   = +Math.min(updated.low,   updated.close).toFixed(base>=1?2:6);
+      candleSeries.update(updated);
+      candleMap[lastTime] = updated;
+      updatePriceDisplay(updated.close, updated.open);
+    }
+  }, Math.max(1000, Math.min(TF_SEC[tf] * 10, 8000)));
+}
+
+function stopSimLive() {
+  if (_simTimer) { clearInterval(_simTimer); _simTimer = null; }
+}
+
+function loadSimulated(pair, tf) {
+  stopSimLive();
+  setWsStatus('simulated');
+  const data = genCandles(pair, tf);
+  candleMap = {};
+  const candles = [], volumes = [];
+  data.forEach(c => {
+    candles.push({ time:c.time, open:c.open, high:c.high, low:c.low, close:c.close });
+    volumes.push({ time:c.time, value:c._vol, color: c.close>=c.open?'#26a69a44':'#ef535044' });
+    candleMap[c.time] = { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close };
+    volumeMap[c.time] = c._vol;
+  });
+  candleSeries.setData(candles);
+  volumeSeries.setData(volumes);
+  setEMAData(candles);
+  setBBData(candles);
+  setRSIData(candles);
+  setVWAPData(candles);
+  setMACDData(candles);
+  setStochData(candles);
+  chart.timeScale().fitContent();
+  _prevClose = data.length > 1 ? data[data.length-2].close : data[data.length-1].open;
+  updatePriceDisplay(data[data.length-1].close, _prevClose);
+  hideLoading();
+  startSimLive(pair, tf);
+}
+
+// ── Initialise chart ──────────────────────────────────────────────────
+function initChart() {
+  const container = document.getElementById('chart');
+
+  chart = LightweightCharts.createChart(container, {
+    width:  container.clientWidth,
+    height: container.clientHeight,
+    layout: {
+      background: { color: '#0d1117' },
+      textColor:  '#8b949e',
+    },
+    grid: {
+      vertLines: { color: '#161b22' },
+      horzLines: { color: '#161b22' },
+    },
+    crosshair: {
+      mode: LightweightCharts.CrosshairMode.Normal,
+      vertLine: { color: '#30363d', labelBackgroundColor: '#161b22' },
+      horzLine: { color: '#30363d', labelBackgroundColor: '#161b22' },
+    },
+    rightPriceScale: {
+      borderColor: '#21262d',
+      textColor:   '#8b949e',
+    },
+    timeScale: {
+      borderColor:     '#21262d',
+      textColor:       '#8b949e',
+      timeVisible:     true,
+      secondsVisible:  false,
+    },
+    handleScroll:  { mouseWheel: true, pressedMouseMove: true },
+    handleScale:   { mouseWheel: true, axisPressedMouseMove: true },
+  });
+
+  // Candlestick series
+  candleSeries = chart.addCandlestickSeries({
+    upColor:          '#26a69a',
+    downColor:        '#ef5350',
+    borderUpColor:    '#26a69a',
+    borderDownColor:  '#ef5350',
+    wickUpColor:      '#26a69a',
+    wickDownColor:    '#ef5350',
+  });
+
+  // Volume series (histogram, lower pane via price scale id)
+  volumeSeries = chart.addHistogramSeries({
+    color:        '#26a69a',
+    priceFormat:  { type: 'volume' },
+    priceScaleId: 'volume',
+  });
+  volumeSeries.priceScale().applyOptions({
+    scaleMargins: { top: 0.8, bottom: 0 },
+  });
+
+  // EMA overlay series
+  ema20Series = chart.addLineSeries({
+    color: '#f0b429', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+  ema50Series = chart.addLineSeries({
+    color: '#7c8cf8', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+  });
+
+  // Bollinger Bands (hidden by default)
+  bbUpperSeries = chart.addLineSeries({
+    color: '#26a69a88', lineWidth: 1, priceLineVisible: false,
+    lastValueVisible: false, crosshairMarkerVisible: false, visible: false,
+  });
+  bbMiddleSeries = chart.addLineSeries({
+    color: '#26a69a55', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+    priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, visible: false,
+  });
+  bbLowerSeries = chart.addLineSeries({
+    color: '#26a69a88', lineWidth: 1, priceLineVisible: false,
+    lastValueVisible: false, crosshairMarkerVisible: false, visible: false,
+  });
+
+  // VWAP overlay (hidden by default)
+  vwapSeries = chart.addLineSeries({
+    color: '#ffffff88', lineWidth: 1.5, priceLineVisible: false,
+    lastValueVisible: false, crosshairMarkerVisible: false, visible: false,
+    lineStyle: LightweightCharts.LineStyle.Dashed,
+  });
+
+  // OHLC tooltip on crosshair move
+  chart.subscribeCrosshairMove(param => {
+    if (!param.time || !candleSeries) return;
+    const candle = param.seriesData.get(candleSeries);
+    if (!candle) return;
+    updateOHLC(candle);
+  });
+
+  // Resize observer
+  const ro = new ResizeObserver(() => {
+    chart.applyOptions({
+      width:  container.clientWidth,
+      height: container.clientHeight,
+    });
+    resizeDrawCanvas();
+    redrawAll();
+  });
+  ro.observe(container);
+
+  // Draw canvas sync
+  resizeDrawCanvas();
+
+  document.getElementById('loading-text').textContent = 'Fetching history…';
+}
+
+// ── Fetch historical klines from Bybit REST ───────────────────────────
+async function fetchHistory(pair, tf) {
+  if (_fetchController) _fetchController.abort();
+  _fetchController = new AbortController();
+  const url = `https://api.bybit.com/v5/market/kline?category=spot&symbol=${pair}&interval=${TF_MAP[tf]}&limit=200`;
+  try {
+    const resp = await fetch(url, { signal: _fetchController.signal });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+    if (json.retCode !== 0) throw new Error(json.retMsg);
+
+    const list = json.result.list.slice().reverse(); // newest-first → oldest-first
+    candleMap = {};
+    const candles = [];
+    const volumes = [];
+
+    list.forEach(k => {
+      const time  = Math.floor(parseInt(k[0]) / 1000);
+      const open  = parseFloat(k[1]);
+      const high  = parseFloat(k[2]);
+      const low   = parseFloat(k[3]);
+      const close = parseFloat(k[4]);
+      const vol   = parseFloat(k[5]);
+      candles.push({ time, open, high, low, close });
+      volumes.push({ time, value: vol, color: close >= open ? '#26a69a44' : '#ef535044' });
+      candleMap[time] = { time, open, high, low, close };
+      volumeMap[time] = vol;
+    });
+
+    candleSeries.setData(candles);
+    volumeSeries.setData(volumes);
+    setEMAData(candles);
+    setBBData(candles);
+    setRSIData(candles);
+    setVWAPData(candles);
+    setMACDData(candles);
+    setStochData(candles);
+    if (_showPDHL) fetchPrevDayHL(currentPair);
+    chart.timeScale().fitContent();
+
+    if (candles.length) {
+      const last = candles[candles.length - 1];
+      _prevClose = candles.length > 1 ? candles[candles.length - 2].close : last.close;
+      updatePriceDisplay(last.close, _prevClose);
+    }
+    hideLoading();
+  } catch(e) {
+    if (e.name === 'AbortError') return;
+    console.warn('[FLUXA] History fetch failed, using simulated data:', e.message);
+    loadSimulated(pair, tf);
+  }
+}
+
+// ── WebSocket live feed ───────────────────────────────────────────────
+function connectWS(pair, tf) {
+  if (ws) { ws.onclose = null; ws.close(); }
+  setWsStatus('connecting');
+
+  ws = new WebSocket('wss://stream.bybit.com/v5/public/spot');
+
+  ws.onopen = () => {
+    _wsFailCount = 0;
+    setWsStatus('connected');
+    startWSPing();
+    ws.send(JSON.stringify({ op: 'subscribe', args: [`kline.${TF_MAP[tf]}.${pair}`] }));
+  };
+  ws.onerror = () => { _wsFailCount++; setWsStatus('error'); };
+  ws.onclose = () => { setWsStatus('disconnected'); stopWSPing(); scheduleReconnect(pair, tf); };
+
+  ws.onmessage = evt => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (!msg.data || !msg.topic || !msg.topic.startsWith('kline')) return;
+
+      const k     = msg.data[0];
+      const time  = Math.floor(parseInt(k.start) / 1000);
+      const open  = parseFloat(k.open);
+      const high  = parseFloat(k.high);
+      const low   = parseFloat(k.low);
+      const close = parseFloat(k.close);
+      const vol   = parseFloat(k.volume);
+
+      const candle = { time, open, high, low, close };
+      candleSeries.update(candle);
+      volumeSeries.update({ time, value: vol, color: close >= open ? '#26a69a44' : '#ef535044' });
+      candleMap[time] = candle;
+      volumeMap[time] = vol;
+
+      const mapKeys = Object.keys(candleMap);
+      if (mapKeys.length > 500) {
+        mapKeys.map(Number).sort((a, b) => a - b).slice(0, 100).forEach(k => delete candleMap[k]);
+      }
+
+      updateEMAOnTick(close, time);
+      updateBBOnTick(time);
+      updateRSIOnTick(close, time);
+      updateMACDOnTick(close, time);
+      // Stoch needs last 14 candles — build them from candleMap
+      const stochTimes = Object.keys(candleMap).map(Number).sort((a,b)=>a-b).slice(-14);
+      if (stochTimes.length >= 14) updateStochOnTick(stochTimes.map(t => candleMap[t]), time);
+      updatePriceDisplay(close, _prevClose);
+      _prevClose = close;
+    } catch(e) { /* ignore malformed */ }
+  };
+}
+
+let _wsFailCount = 0;
+let reconnectTimer = null;
+function scheduleReconnect(pair, tf) {
+  clearTimeout(reconnectTimer);
+  if (_wsFailCount >= 2) {
+    console.warn('[FLUXA] WebSocket unavailable, switching to simulated live data.');
+    loadSimulated(pair, tf);
+    return;
+  }
+  reconnectTimer = setTimeout(() => connectWS(pair, tf), 3000);
+}
+
+
+// ── 24h stats ─────────────────────────────────────────────────────────
+async function fetch24hStats(pair) {
+  try {
+    const resp = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${pair}`);
+    if (!resp.ok) return;
+    const json = await resp.json();
+    const t = json?.result?.list?.[0];
+    if (!t) return;
+
+    // Keep BASE_PRICES fresh so simulated fallback starts at the right price
+    if (t.lastPrice) BASE_PRICES[pair] = parseFloat(t.lastPrice);
+
+    const pct    = parseFloat(t.price24hPcnt) * 100;
+    const high24 = parseFloat(t.highPrice24h);
+    const low24  = parseFloat(t.lowPrice24h);
+
+    const changeEl = document.getElementById('change-display');
+    changeEl.textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+    changeEl.className   = pct >= 0 ? 'up' : 'down';
+
+    document.getElementById('stats-24h').textContent =
+      `24h H: ${formatPrice(high24)}  L: ${formatPrice(low24)}`;
+  } catch(e) { /* non-critical, ignore */ }
+}
+
+// ── Pair / timeframe switching ────────────────────────────────────────
+function setPair(pair) {
+  if (pair === currentPair) return;
+  currentPair = pair;
+  candleMap   = {};
+  clearDrawings();
+  updateActiveBtn('.pair-btn', pair, 'data-pair');
+  document.getElementById('symbol-label').textContent = PAIR_LABELS[pair] || pair;
+  reload();
+  // Notify Unity via SimpleUnity3DWebView bridge
+  if (typeof Android !== 'undefined') {
+    Android.sendJsonData(JSON.stringify({ type: 'event', data: 'pair:' + pair }));
+  }
+}
+
+function setTimeframe(tf) {
+  if (tf === currentTf) return;
+  currentTf = tf;
+  clearDrawings();
+  updateActiveBtn('.tf-btn', tf, 'data-tf');
+  reload();
+  if (typeof Android !== 'undefined') {
+    Android.sendJsonData(JSON.stringify({ type: 'event', data: 'tf:' + tf }));
+  }
+}
+
+// Called by Unity WebViewManager to change pair programmatically
+function setSymbol(pair) { setPair(pair); }
+
+// Called by Unity TimeframeController via EvaluateJavascript.
+// Accepts TradingView-style resolution codes: "1","5","15","60","240","D","W"
+window.setTimeframeByResolution = function(resolution) {
+  const tf = RESOLUTION_TO_TF[resolution];
+  if (tf) setTimeframe(tf);
+  else console.warn('[FLUXA] Unknown resolution:', resolution);
+};
+
+function reload() {
+  _wsFailCount = 0;
+  stopSimLive();
+  showLoading('Fetching history…');
+  fetchHistory(currentPair, currentTf);
+  connectWS(currentPair, currentTf);
+  fetch24hStats(currentPair);
+  if (_showPDHL) fetchPrevDayHL(currentPair);
+}
+
+// ── Drawing tools ─────────────────────────────────────────────────────
+const drawCanvas  = document.getElementById('draw-canvas');
+const drawCtx     = drawCanvas.getContext('2d');
+const cursorCanvas = document.getElementById('cursor-canvas');
+const cursorCtx    = cursorCanvas.getContext('2d');
+let _mxPressure   = 1.0;   // 0–1, set by Unity or pointer event
+const drawTooltip = document.getElementById('draw-tooltip');
+
+function setDrawColor(color) {
+  _drawColor = color;
+  document.querySelectorAll('.color-dot').forEach(d =>
+    d.classList.toggle('active', d.dataset.color === color)
+  );
+}
+
+function updateDrawHint() {
+  const el = document.getElementById('draw-hint');
+  if (!currentTool) { el.style.display = 'none'; return; }
+  const hints = {
+    trend:    drawStep === 0 ? 'Click to set start point' : 'Click to set end point  •  Right-click or Esc to cancel',
+    hline:    'Click anywhere to place a horizontal line',
+    fib:      _fibStep  === 0 ? 'Click high or low point' : 'Click the other end to draw Fibonacci levels  •  Esc to cancel',
+    rect:     _rectStep === 0 ? 'Click to set first corner' : 'Click to set second corner  •  Esc to cancel',
+    freehand: 'Hold and drag to draw  •  Release to finish stroke',
+    position: _posStep === 0 ? '① Click Entry price' : _posStep === 1 ? '② Click Stop Loss  •  Esc to cancel' : '③ Click Take Profit  •  Esc to cancel',
+  };
+  el.textContent = hints[currentTool] || '';
+  el.style.display = 'block';
+}
+
+function resizeDrawCanvas() {
+  const c = document.getElementById('chart-container');
+  drawCanvas.width   = c.clientWidth;
+  drawCanvas.height  = c.clientHeight;
+  cursorCanvas.width  = c.clientWidth;
+  cursorCanvas.height = c.clientHeight;
+  redrawAll();
+}
+
+function drawCursor(x, y) {
+  cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+  if (!currentTool) return;
+  const price = yToPrice(y);
+  const time  = chart.timeScale().coordinateToTime(x);
+  const W = cursorCanvas.width, H = cursorCanvas.height;
+
+  cursorCtx.save();
+  cursorCtx.strokeStyle = 'rgba(200,200,200,0.35)';
+  cursorCtx.lineWidth   = 1;
+  cursorCtx.setLineDash([4, 4]);
+
+  // Vertical line
+  cursorCtx.beginPath(); cursorCtx.moveTo(x, 0); cursorCtx.lineTo(x, H); cursorCtx.stroke();
+  // Horizontal line
+  cursorCtx.beginPath(); cursorCtx.moveTo(0, y); cursorCtx.lineTo(W, y); cursorCtx.stroke();
+  cursorCtx.setLineDash([]);
+
+  // Dot at intersection
+  cursorCtx.fillStyle = '#00bcd4';
+  cursorCtx.beginPath(); cursorCtx.arc(x, y, 3.5, 0, Math.PI * 2); cursorCtx.fill();
+
+  // Price label on right axis
+  if (price !== null) {
+    const label = formatPrice(price);
+    cursorCtx.font = 'bold 11px monospace';
+    const tw = cursorCtx.measureText(label).width + 10;
+    cursorCtx.fillStyle = '#00bcd4';
+    cursorCtx.fillRect(W - tw - 2, y - 9, tw + 2, 18);
+    cursorCtx.fillStyle = '#0d1117';
+    cursorCtx.textAlign = 'right';
+    cursorCtx.textBaseline = 'middle';
+    cursorCtx.fillText(label, W - 6, y);
+  }
+
+  // Time label on bottom axis
+  if (time) {
+    const tStr = new Date(time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    cursorCtx.font = 'bold 11px monospace';
+    const tw2 = cursorCtx.measureText(tStr).width + 10;
+    const lx  = Math.min(Math.max(x - tw2 / 2, 0), W - tw2);
+    cursorCtx.fillStyle = '#00bcd4';
+    cursorCtx.fillRect(lx, H - 18, tw2, 16);
+    cursorCtx.fillStyle = '#0d1117';
+    cursorCtx.textAlign = 'center';
+    cursorCtx.textBaseline = 'middle';
+    cursorCtx.fillText(tStr, lx + tw2 / 2, H - 10);
+  }
+
+  cursorCtx.restore();
+}
+
+function setTool(tool) {
+  if (currentTool === tool) {
+    currentTool = null;
+    drawCanvas.classList.remove('active');
+    updateDrawBtnStates();
+    updateDrawHint();
+    return;
+  }
+
+  if (tool === 'erase') {
+    clearDrawings();
+    currentTool = null;
+    drawCanvas.classList.remove('active');
+    updateDrawBtnStates();
+    updateDrawHint();
+    return;
+  }
+
+  currentTool = tool;
+  drawStep    = 0;
+  drawStart   = null;
+  _posStep    = 0;
+  _posEntry   = null;
+  _posSL      = null;
+  drawCanvas.classList.add('active');
+  updateDrawBtnStates();
+  updateDrawHint();
+}
+
+function updateDrawBtnStates() {
+  ['trend','hline','fib','rect','freehand','position'].forEach(t => {
+    const el = document.getElementById('btn-' + t);
+    if (el) el.classList.toggle('active', currentTool === t);
+  });
+  const eraseEl = document.getElementById('btn-erase');
+  if (eraseEl) eraseEl.classList.remove('active');
+}
+
+/* Canvas mouse events */
+// Use pointermove so e.pressure is populated for MX Ink stylus
+drawCanvas.addEventListener('pointermove', e => {
+  if (e.pressure > 0) _mxPressure = e.pressure;
+  onDrawMouseMove(e);
+});
+drawCanvas.addEventListener('click',     onDrawClick);
+drawCanvas.addEventListener('pointerleave', () => {
+  drawTooltip.style.display = 'none';
+  cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+  _mxPressure = 1.0;
+});
+drawCanvas.addEventListener('pointerdown', e => {
+  if (e.pressure > 0) _mxPressure = e.pressure;
+  onDrawMouseDown(e);
+});
+drawCanvas.addEventListener('pointerup',   e => onDrawMouseUp(e));
+drawCanvas.addEventListener('contextmenu',  e => {
+  e.preventDefault();
+  if (currentTool === 'trend' && drawStep === 1)   { drawStep=0; drawStart=null; redrawAll(); updateDrawHint(); }
+  else if (currentTool === 'fib'  && _fibStep === 1)  { _fibStep=0; _fibStart=null; redrawAll(); updateDrawHint(); }
+  else if (currentTool === 'rect' && _rectStep === 1) { _rectStep=0; _rectStart=null; redrawAll(); updateDrawHint(); }
+  else if (currentTool === 'position' && _posStep > 0) { _posStep=0; _posEntry=null; _posSL=null; redrawAll(); updateDrawHint(); }
+  else if (currentTool) { setTool(currentTool); }
+});
+
+function onDrawMouseMove(e) {
+  const rect  = drawCanvas.getBoundingClientRect();
+  const x     = e.clientX - rect.left;
+  const y     = e.clientY - rect.top;
+  const price = yToPrice(y);
+
+  // Read native stylus pressure if available (PointerEvent)
+  if (e.pressure !== undefined && e.pressure > 0) _mxPressure = e.pressure;
+
+  // Hide old tooltip — cursor canvas now shows price + time inline
+  drawTooltip.style.display = 'none';
+
+  // Freehand: live stroke while held
+  if (currentTool === 'freehand' && _isDrawingFreehand) {
+    if (_freehandPoints.length > 0) {
+      const prev = _freehandPoints[_freehandPoints.length - 1];
+      drawCtx.save();
+      drawCtx.strokeStyle = _drawColor;
+      drawCtx.lineWidth   = Math.max(1, _mxPressure * 4);
+      drawCtx.lineCap     = 'round';
+      drawCtx.lineJoin    = 'round';
+      drawCtx.setLineDash([]);
+      drawCtx.beginPath();
+      drawCtx.moveTo(prev.x, prev.y);
+      drawCtx.lineTo(x, y);
+      drawCtx.stroke();
+      drawCtx.restore();
+    }
+    _freehandPoints.push({ x, y, p: _mxPressure });
+    cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+    return;
+  }
+
+  // Trend line: preview ray + first anchor dot
+  if (currentTool === 'trend' && drawStep === 1 && drawStart) {
+    redrawAll();
+    drawCtx.save();
+    // dashed preview ray
+    drawCtx.strokeStyle = _drawColor + '88';
+    drawCtx.lineWidth   = 1.5;
+    drawCtx.setLineDash([6, 3]);
+    drawCtx.beginPath();
+    drawCtx.moveTo(drawStart.x, drawStart.y);
+    if (x !== drawStart.x) {
+      const slope = (y - drawStart.y) / (x - drawStart.x);
+      const extX  = drawCanvas.width;
+      const extY  = drawStart.y + slope * (extX - drawStart.x);
+      drawCtx.lineTo(extX, extY);
+    } else {
+      drawCtx.lineTo(x, drawCanvas.height);
+    }
+    drawCtx.stroke();
+    drawCtx.setLineDash([]);
+    // first anchor dot
+    drawCtx.fillStyle = _drawColor;
+    drawCtx.beginPath();
+    drawCtx.arc(drawStart.x, drawStart.y, 4, 0, Math.PI * 2);
+    drawCtx.fill();
+    drawCtx.restore();
+  }
+
+  // Fib: preview second point and show price range
+  if (currentTool === 'fib' && _fibStep === 1 && _fibStart) {
+    redrawAll();
+    drawCtx.save();
+    drawCtx.strokeStyle = _drawColor + '66';
+    drawCtx.lineWidth = 1;
+    drawCtx.setLineDash([4, 3]);
+    drawCtx.beginPath();
+    drawCtx.moveTo(_fibStart.x, _fibStart.y);
+    drawCtx.lineTo(x, y);
+    drawCtx.stroke();
+    drawCtx.fillStyle = _drawColor;
+    drawCtx.beginPath(); drawCtx.arc(_fibStart.x, _fibStart.y, 4, 0, Math.PI*2); drawCtx.fill();
+    drawCtx.restore();
+  }
+
+  // Rect: live preview box
+  if (currentTool === 'rect' && _rectStep === 1 && _rectStart) {
+    redrawAll();
+    drawCtx.save();
+    const bx = Math.min(_rectStart.x, x), by = Math.min(_rectStart.y, y);
+    const bw = Math.abs(x - _rectStart.x),  bh = Math.abs(y - _rectStart.y);
+    drawCtx.fillStyle   = _drawColor + '22';
+    drawCtx.strokeStyle = _drawColor + '99';
+    drawCtx.lineWidth   = 1.5;
+    drawCtx.setLineDash([5, 3]);
+    drawCtx.fillRect(bx, by, bw, bh);
+    drawCtx.strokeRect(bx, by, bw, bh);
+    drawCtx.restore();
+  }
+
+  // Position: preview zones as user sets each point
+  if (currentTool === 'position' && _posStep >= 1 && price !== null) {
+    redrawAll();
+    drawCtx.save();
+    const entryY = _posEntry ? priceToY(_posEntry.price) : null;
+    const slY    = _posStep === 2 && _posSL ? priceToY(_posSL.price) : null;
+
+    if (_posStep === 1 && entryY !== null) {
+      // Preview SL zone: entry line + dragging SL
+      const isLong = price > _posEntry.price;
+      const zoneColor = isLong ? '#ef535033' : '#ef535033';
+      const ey = entryY, cy = y;
+      drawCtx.fillStyle = zoneColor;
+      drawCtx.fillRect(0, Math.min(ey, cy), drawCanvas.width, Math.abs(cy - ey));
+      drawCtx.strokeStyle = '#ef5350'; drawCtx.lineWidth = 1; drawCtx.setLineDash([4,3]);
+      drawCtx.beginPath(); drawCtx.moveTo(0, cy); drawCtx.lineTo(drawCanvas.width, cy); drawCtx.stroke();
+      drawCtx.strokeStyle = '#ffd700'; drawCtx.setLineDash([]);
+      drawCtx.beginPath(); drawCtx.moveTo(0, ey); drawCtx.lineTo(drawCanvas.width, ey); drawCtx.stroke();
+      _drawPosLabel(drawCtx, 'Entry: ' + formatPrice(_posEntry.price), drawCanvas.width - 8, ey, '#ffd700', 'right');
+      _drawPosLabel(drawCtx, 'SL: ' + formatPrice(price), drawCanvas.width - 8, cy, '#ef5350', 'right');
+    }
+
+    if (_posStep === 2 && entryY !== null && slY !== null) {
+      // Preview TP zone: show full picture
+      const ey = entryY, sy = slY, cy = y;
+      const isLong = _posEntry.price > _posSL.price;
+      drawCtx.fillStyle = '#ef535033';
+      drawCtx.fillRect(0, Math.min(ey, sy), drawCanvas.width, Math.abs(sy - ey));
+      drawCtx.fillStyle = '#3fb95033';
+      drawCtx.fillRect(0, Math.min(ey, cy), drawCanvas.width, Math.abs(cy - ey));
+      drawCtx.strokeStyle = '#ef5350'; drawCtx.lineWidth=1; drawCtx.setLineDash([4,3]);
+      drawCtx.beginPath(); drawCtx.moveTo(0,sy); drawCtx.lineTo(drawCanvas.width,sy); drawCtx.stroke();
+      drawCtx.strokeStyle = '#3fb950'; drawCtx.setLineDash([4,3]);
+      drawCtx.beginPath(); drawCtx.moveTo(0,cy); drawCtx.lineTo(drawCanvas.width,cy); drawCtx.stroke();
+      drawCtx.strokeStyle = '#ffd700'; drawCtx.setLineDash([]);
+      drawCtx.beginPath(); drawCtx.moveTo(0,ey); drawCtx.lineTo(drawCanvas.width,ey); drawCtx.stroke();
+      const risk = Math.abs(_posEntry.price - _posSL.price);
+      const reward = Math.abs(price - _posEntry.price);
+      const rr = risk > 0 ? (reward / risk).toFixed(1) : '—';
+      const pct = p => ((Math.abs(p - _posEntry.price) / _posEntry.price) * 100).toFixed(2) + '%';
+      _drawPosLabel(drawCtx, 'Entry: ' + formatPrice(_posEntry.price), drawCanvas.width - 8, ey, '#ffd700', 'right');
+      _drawPosLabel(drawCtx, 'SL: ' + formatPrice(_posSL.price) + ' −' + pct(_posSL.price), drawCanvas.width - 8, sy, '#ef5350', 'right');
+      _drawPosLabel(drawCtx, 'TP: ' + formatPrice(price) + ' +' + pct(price) + '  R:R 1:' + rr, drawCanvas.width - 8, cy, '#3fb950', 'right');
+    }
+    drawCtx.restore();
+  }
+
+  drawCursor(x, y);
+}
+
+function _drawPosLabel(ctx, text, x, y, color, align) {
+  ctx.save();
+  ctx.font = 'bold 11px monospace';
+  ctx.textAlign = align || 'right';
+  ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width + 10;
+  const lx = align === 'right' ? x - w : x;
+  ctx.fillStyle = '#1a1d2e';
+  ctx.fillRect(lx, y - 9, w, 18);
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function onDrawMouseDown(e) {
+  if (currentTool !== 'freehand') return;
+  _isDrawingFreehand = true;
+  _freehandPoints    = [];
+  const rect = drawCanvas.getBoundingClientRect();
+  _freehandPoints.push({ x: e.clientX - rect.left, y: e.clientY - rect.top, p: _mxPressure });
+}
+
+function onDrawMouseUp(e) {
+  if (!_isDrawingFreehand) return;
+  _isDrawingFreehand = false;
+  if (_freehandPoints.length > 1) {
+    drawings.push({ type: 'freehand', points: [..._freehandPoints], color: _drawColor });
+  }
+  _freehandPoints = [];
+  redrawAll();
+}
+
+function onDrawClick(e) {
+  if (!currentTool || currentTool === 'freehand') return;
+  const bRect = drawCanvas.getBoundingClientRect();
+  const x     = e.clientX - bRect.left;
+  // Clamp y inside the canvas so coordinateToPrice always gets a valid input
+  const y     = Math.max(0, Math.min(e.clientY - bRect.top, drawCanvas.height - 1));
+  const price = yToPrice(y);
+  const time  = chart.timeScale().coordinateToTime(x)
+             ?? chart.timeScale().getVisibleRange()?.to;
+
+  if (currentTool === 'hline') {
+    if (!price) return;
+    const priceLine = candleSeries.createPriceLine({
+      price, color: _drawColor, lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: '',
+    });
+    drawings.push({ type: 'hline', price, priceLine });
+
+  } else if (currentTool === 'trend') {
+    if (drawStep === 0) {
+      drawStart = { x, y, price, time: time ?? 0 };
+      drawStep  = 1;
+      updateDrawHint();
+    } else {
+      drawings.push({ type: 'trend', x1: drawStart.x, y1: drawStart.y, x2: x, y2: y,
+        p1: drawStart.price, p2: price, t1: drawStart.time, t2: time ?? drawStart.time, color: _drawColor });
+      drawStep = 0; drawStart = null;
+      redrawAll(); updateDrawHint();
+    }
+
+  } else if (currentTool === 'fib') {
+    if (_fibStep === 0) {
+      if (!price) return;
+      _fibStart = { x, y, price };
+      _fibStep  = 1;
+      updateDrawHint();
+    } else {
+      if (!price || !_fibStart.price) return;
+      const hi  = Math.max(_fibStart.price, price);
+      const lo  = Math.min(_fibStart.price, price);
+      const rng = hi - lo;
+      if (rng === 0) { _fibStep = 0; _fibStart = null; return; }
+      const levels    = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
+      const fibColors = ['#8b949e','#f0b429','#3fb950','#00bcd4','#3fb950','#f0b429','#8b949e'];
+      const isUp = _fibStart.price < price;
+      const lines = levels.map((lvl, i) => {
+        const fp = isUp ? lo + rng * lvl : hi - rng * lvl;
+        return candleSeries.createPriceLine({
+          price: fp, color: fibColors[i], lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true, title: (lvl * 100).toFixed(1) + '%',
+        });
+      });
+      drawings.push({ type: 'fib', lines });
+      _fibStep = 0; _fibStart = null;
+      redrawAll(); updateDrawHint();
+    }
+
+  } else if (currentTool === 'rect') {
+    if (_rectStep === 0) {
+      _rectStart = { x, y, price, time: time ?? 0 };
+      _rectStep  = 1;
+      updateDrawHint();
+    } else {
+      drawings.push({ type: 'rect', t1: _rectStart.time, p1: _rectStart.price,
+        t2: time ?? _rectStart.time, p2: price, color: _drawColor });
+      _rectStep = 0; _rectStart = null;
+      redrawAll(); updateDrawHint();
+    }
+
+  } else if (currentTool === 'position') {
+    if (!price) return;
+    if (_posStep === 0) {
+      _posEntry = { price };
+      _posStep  = 1;
+      updateDrawHint();
+    } else if (_posStep === 1) {
+      if (price === _posEntry.price) return;
+      _posSL   = { price };
+      _posStep = 2;
+      updateDrawHint();
+    } else {
+      if (!price || !_posEntry || !_posSL) return;
+      const isLong = _posEntry.price > _posSL.price;
+      const risk   = Math.abs(_posEntry.price - _posSL.price);
+      const reward = Math.abs(price - _posEntry.price);
+      const rr     = risk > 0 ? +(reward / risk).toFixed(2) : 0;
+      drawings.push({ type: 'position', entry: _posEntry.price, sl: _posSL.price, tp: price, isLong, rr });
+      _posStep = 0; _posEntry = null; _posSL = null;
+      redrawAll(); updateDrawHint();
+    }
+  }
+}
+
+function undoDrawing() {
+  if (!drawings.length) return;
+  const last = drawings.pop();
+  if (last.type === 'hline' && last.priceLine) candleSeries.removePriceLine(last.priceLine);
+  if (last.type === 'fib'   && last.lines)     last.lines.forEach(l => candleSeries.removePriceLine(l));
+  redrawAll();
+}
+
+function clearDrawings() {
+  drawings.forEach(d => {
+    if (d.type === 'hline' && d.priceLine) candleSeries.removePriceLine(d.priceLine);
+    if (d.type === 'fib'   && d.lines)     d.lines.forEach(l => candleSeries.removePriceLine(l));
+  });
+  drawings = []; drawStep = 0; drawStart = null;
+  _fibStep = 0; _fibStart = null; _rectStep = 0; _rectStart = null;
+  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+}
+
+function redrawAll() {
+  drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  drawings.forEach(d => {
+    drawCtx.save();
+    const color = d.color || '#00bcd4';
+
+    if (d.type === 'hline' || d.type === 'fib') { drawCtx.restore(); return; }
+
+    if (d.type === 'freehand' && d.points && d.points.length > 1) {
+      drawCtx.lineCap = 'round'; drawCtx.lineJoin = 'round'; drawCtx.setLineDash([]);
+      for (let i = 1; i < d.points.length; i++) {
+        const prev = d.points[i - 1], cur = d.points[i];
+        drawCtx.strokeStyle = color;
+        drawCtx.lineWidth = Math.max(1, (cur.p ?? 1) * 4);
+        drawCtx.beginPath(); drawCtx.moveTo(prev.x, prev.y); drawCtx.lineTo(cur.x, cur.y);
+        drawCtx.stroke();
+      }
+      drawCtx.restore(); return;
+    }
+
+    if (d.type === 'trend') {
+      let cx1 = d.x1, cy1 = d.y1, cx2 = d.x2, cy2 = d.y2;
+      try {
+        if (d.t1 && d.t2) {
+          const tx1 = chart.timeScale().timeToCoordinate(d.t1);
+          const tx2 = chart.timeScale().timeToCoordinate(d.t2);
+          const ty1 = priceToY(d.p1); const ty2 = priceToY(d.p2);
+          if (tx1 !== null && tx2 !== null && ty1 !== null && ty2 !== null) { cx1=tx1; cy1=ty1; cx2=tx2; cy2=ty2; }
+        }
+      } catch(_) {}
+      drawCtx.strokeStyle = color; drawCtx.lineWidth = 1.5; drawCtx.lineCap = 'round'; drawCtx.setLineDash([]);
+      drawCtx.beginPath(); drawCtx.moveTo(cx1, cy1); drawCtx.lineTo(cx2, cy2);
+      drawCtx.stroke();
+      drawCtx.fillStyle = color;
+      drawCtx.beginPath(); drawCtx.arc(cx1,cy1,4,0,Math.PI*2); drawCtx.fill();
+      drawCtx.beginPath(); drawCtx.arc(cx2,cy2,4,0,Math.PI*2); drawCtx.fill();
+      drawCtx.restore(); return;
+    }
+
+    if (d.type === 'rect') {
+      try {
+        const rx1 = chart.timeScale().timeToCoordinate(d.t1);
+        const rx2 = chart.timeScale().timeToCoordinate(d.t2);
+        const ry1 = priceToY(d.p1); const ry2 = priceToY(d.p2);
+        if (rx1===null||rx2===null||ry1===null||ry2===null) { drawCtx.restore(); return; }
+        const x = Math.min(rx1,rx2), y = Math.min(ry1,ry2);
+        const w = Math.abs(rx2-rx1),  h = Math.abs(ry2-ry1);
+        drawCtx.fillStyle   = color + '22';
+        drawCtx.strokeStyle = color;
+        drawCtx.lineWidth   = 1.5;
+        drawCtx.setLineDash([]);
+        drawCtx.fillRect(x,y,w,h);
+        drawCtx.strokeRect(x,y,w,h);
+      } catch(_) {}
+      drawCtx.restore(); return;
+    }
+
+    if (d.type === 'position') {
+      try {
+        const ey = priceToY(d.entry);
+        const sy = priceToY(d.sl);
+        const ty = priceToY(d.tp);
+        if (ey===null||sy===null||ty===null) { drawCtx.restore(); return; }
+        const W = drawCanvas.width;
+        // SL zone (red)
+        drawCtx.fillStyle = '#ef535033';
+        drawCtx.fillRect(0, Math.min(ey,sy), W, Math.abs(sy-ey));
+        // TP zone (green)
+        drawCtx.fillStyle = '#3fb95033';
+        drawCtx.fillRect(0, Math.min(ey,ty), W, Math.abs(ty-ey));
+        // Lines
+        drawCtx.lineWidth = 1; drawCtx.setLineDash([]);
+        drawCtx.strokeStyle = '#ffd700';
+        drawCtx.beginPath(); drawCtx.moveTo(0,ey); drawCtx.lineTo(W,ey); drawCtx.stroke();
+        drawCtx.strokeStyle = '#ef5350';
+        drawCtx.beginPath(); drawCtx.moveTo(0,sy); drawCtx.lineTo(W,sy); drawCtx.stroke();
+        drawCtx.strokeStyle = '#3fb950';
+        drawCtx.beginPath(); drawCtx.moveTo(0,ty); drawCtx.lineTo(W,ty); drawCtx.stroke();
+        // Labels
+        const pct = (p, ref) => ((Math.abs(p - ref) / ref) * 100).toFixed(2) + '%';
+        _drawPosLabel(drawCtx, 'Entry: ' + formatPrice(d.entry), W-8, ey, '#ffd700', 'right');
+        _drawPosLabel(drawCtx, 'SL: ' + formatPrice(d.sl) + '  −' + pct(d.sl, d.entry), W-8, sy, '#ef5350', 'right');
+        _drawPosLabel(drawCtx, 'TP: ' + formatPrice(d.tp) + '  +' + pct(d.tp, d.entry) + '  R:R 1:' + d.rr, W-8, ty, '#3fb950', 'right');
+      } catch(_) {}
+      drawCtx.restore(); return;
+    }
+
+    drawCtx.restore();
+  });
+}
+
+/* Convert chart y-pixel ↔ price using the series API (v4: lives on ISeriesApi, not IPriceScaleApi) */
+function yToPrice(y) {
+  if (!candleSeries) return null;
+  try {
+    const p = candleSeries.coordinateToPrice(y);
+    return (p === null || p === undefined || isNaN(p)) ? null : p;
+  } catch(e) { return null; }
+}
+function priceToY(price) {
+  if (!candleSeries) return null;
+  try {
+    const y = candleSeries.priceToCoordinate(price);
+    return (y === null || y === undefined || isNaN(y)) ? null : y;
+  } catch(e) { return null; }
+}
+
+// ── Display helpers ───────────────────────────────────────────────────
+function updatePriceDisplay(close, prevClose) {
+  const el = document.getElementById('price-display');
+  el.textContent = close ? formatPrice(close) : '--';
+  if (prevClose) {
+    el.style.color = close >= prevClose ? '#26a69a' : '#ef5350';
+  }
+}
+
+function updateOHLC(candle) {
+  const fmt = v => formatPrice(parseFloat(v));
+  document.getElementById('ohlc-display').textContent =
+    `O: ${fmt(candle.open)}  H: ${fmt(candle.high)}  L: ${fmt(candle.low)}  C: ${fmt(candle.close)}`;
+}
+
+function setWsStatus(status) {
+  const dot   = document.getElementById('ws-dot');
+  const label = document.getElementById('ws-label');
+  dot.className = '';
+  if (status === 'connected')    { dot.classList.add('connected'); label.textContent = 'Live'; }
+  else if (status === 'error')   { dot.classList.add('error');     label.textContent = 'Error'; }
+  else if (status === 'connecting') {                               label.textContent = 'Connecting…'; }
+  else if (status === 'simulated') { dot.classList.add('simulated'); label.textContent = 'Simulated'; }
+  else                           {                                  label.textContent = 'Offline'; }
+}
+
+function showLoading(msg) {
+  document.getElementById('loading').classList.remove('hidden');
+  document.getElementById('loading-text').textContent = msg || 'Loading…';
+}
+function hideLoading() {
+  document.getElementById('loading').classList.add('hidden');
+}
+
+function updateActiveBtn(selector, value, attr) {
+  document.querySelectorAll(selector).forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute(attr) === value);
+  });
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  if (typeof LightweightCharts === 'undefined') {
+    document.getElementById('loading-text').textContent =
+      'Error: Could not load chart library. Check internet connection.';
+    return;
+  }
+
+  initChart();
+  initRSIChart();
+  initMACDChart();
+  initStochChart();
+  document.getElementById('symbol-label').textContent = PAIR_LABELS[currentPair];
+
+  // Subscribe redraw to time scale changes (needs chart ready)
+  chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+    clearTimeout(redrawThrottle);
+    redrawThrottle = setTimeout(redrawAll, 30);
+  });
+
+  // Show simulated data immediately so the chart is never stuck loading,
+  // then try to fetch real data in the background and upgrade if it arrives.
+  loadSimulated(currentPair, currentTf);
+  fetch24hStats(currentPair);
+  fetchHistory(currentPair, currentTf).then(() => {
+    connectWS(currentPair, currentTf);
+  });
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undoDrawing(); return; }
+  if (e.key === 'Escape') {
+    if      (currentTool === 'trend' && drawStep === 1)   { drawStep=0; drawStart=null; redrawAll(); updateDrawHint(); }
+    else if (currentTool === 'fib'  && _fibStep === 1)    { _fibStep=0; _fibStart=null; redrawAll(); updateDrawHint(); }
+    else if (currentTool === 'rect' && _rectStep === 1)     { _rectStep=0; _rectStart=null; redrawAll(); updateDrawHint(); }
+    else if (currentTool === 'position' && _posStep > 0)    { _posStep=0; _posEntry=null; _posSL=null; redrawAll(); updateDrawHint(); }
+    else { currentTool=null; drawCanvas.classList.remove('active'); updateDrawBtnStates(); updateDrawHint(); }
+    return;
+  }
+  if (e.key === 't' || e.key === 'T') setTool('trend');
+  if (e.key === 'h' || e.key === 'H') setTool('hline');
+  if (e.key === 'f' || e.key === 'F') setTool('freehand');
+  if (e.key === 'z' || e.key === 'Z') setTool('fib');
+  if (e.key === 'r' || e.key === 'R') setTool('rect');
+  if (e.key === 'p' || e.key === 'P') setTool('position');
+});
+
+// Touch support for mobile / Quest browser
+drawCanvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  onDrawMouseDown({ clientX: t.clientX, clientY: t.clientY });
+  onDrawClick({ clientX: t.clientX, clientY: t.clientY });
+}, { passive: false });
+
+drawCanvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  onDrawMouseMove({ clientX: t.clientX, clientY: t.clientY });
+}, { passive: false });
+
+drawCanvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  onDrawMouseUp({ clientX: t.clientX, clientY: t.clientY });
+}, { passive: false });
+
+// ── MX Ink bridge API (called by Unity via EvaluateJavascript) ────────
+const _TOOL_CYCLE = [null, 'trend', 'hline', 'fib', 'rect', 'freehand', 'position'];
+
+// Unity calls this with raw tip pressure (0.0–1.0) before injecting touch
+window.setMXInkPressure = function(p) {
+  _mxPressure = Math.max(0, Math.min(1, p));
+};
+
+// Barrel single-tap: cancel active draw step, or undo last drawing
+window.mxInkBarrelPress = function() {
+  if (currentTool === 'trend'    && drawStep  > 0) { drawStep=0;    drawStart=null;  redrawAll(); updateDrawHint(); return; }
+  if (currentTool === 'fib'      && _fibStep  > 0) { _fibStep=0;    _fibStart=null;  redrawAll(); updateDrawHint(); return; }
+  if (currentTool === 'rect'     && _rectStep > 0) { _rectStep=0;   _rectStart=null; redrawAll(); updateDrawHint(); return; }
+  if (currentTool === 'position' && _posStep  > 0) { _posStep=0;    _posEntry=null;  _posSL=null; redrawAll(); updateDrawHint(); return; }
+  undoDrawing();
+};
+
+// Double-tap tip: cycle through draw tools
+window.mxInkDoubleTap = function() {
+  const idx  = _TOOL_CYCLE.indexOf(currentTool);
+  const next = _TOOL_CYCLE[(idx + 1) % _TOOL_CYCLE.length];
+  if (next === null) {
+    currentTool = null;
+    drawCanvas.classList.remove('active');
+    cursorCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+    updateDrawBtnStates(); updateDrawHint();
+  } else {
+    setTool(next);
+  }
+};
+
+// Barrel hold + drag: pan chart horizontally (dx in screen pixels)
+window.mxInkBarrelPanDelta = function(dx) {
+  try {
+    const ts  = chart.timeScale();
+    const pos = ts.scrollPosition();
+    ts.scrollToPosition(pos - dx * 0.5, false);
+  } catch(_) {}
+};
+
+// ── UI Tooltip ────────────────────────────────────────────────────────
+(function() {
+  const tip = document.getElementById('ui-tip');
+  let hideTimer;
+
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('[data-tip]');
+    if (!el) return;
+    clearTimeout(hideTimer);
+    tip.textContent = el.dataset.tip;
+    tip.style.display = 'block';
+    _positionTip(e);
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!e.target.closest('[data-tip]')) return;
+    _positionTip(e);
+  });
+
+  document.addEventListener('mouseout', e => {
+    if (!e.target.closest('[data-tip]')) return;
+    hideTimer = setTimeout(() => { tip.style.display = 'none'; }, 80);
+  });
+
+  function _positionTip(e) {
+    const pad = 12;
+    let lx = e.clientX + pad;
+    let ly = e.clientY - 36;
+    if (lx + tip.offsetWidth + pad > window.innerWidth)  lx = e.clientX - tip.offsetWidth - pad;
+    if (ly < 4) ly = e.clientY + pad;
+    tip.style.left = lx + 'px';
+    tip.style.top  = ly + 'px';
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+using UnityEngine;
+
+/// <summary>
+/// Marks a GameObject as the FLUXA panel root and tracks its visibility state.
+/// Attach this component to the "FLUXAPanel" GameObject in your scene.
+/// </summary>
+public class FLUXAPanel : MonoBehaviour
+{
+    /// <summary>
+    /// Whether the panel is logically visible.
+    /// Set this to show/hide the panel without necessarily deactivating the GameObject.
+    /// </summary>
+    public bool isVisible = true;
+
+    private void OnEnable()
+    {
+        isVisible = true;
+    }
+
+    private void OnDisable()
+    {
+        isVisible = false;
+    }
+}
